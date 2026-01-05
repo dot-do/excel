@@ -236,16 +236,31 @@ isEmptyCell(cell)  // false
 ### Import/Export XLSX
 
 ```typescript
-import { importXLSX } from 'excel.do/import'
-import { exportXLSX } from 'excel.do/export'
+import { parseWorkbook, parseSheet, rowsFromSheet } from 'excel.do/import'
+import { toXLSX, toCSV, toWorkbook, toSheet, cellToSheetJS } from 'excel.do/export'
 
-// Import from XLSX file
+// Import and parse XLSX file
 const buffer = await fs.readFile('data.xlsx')
-const cells = await importXLSX(buffer)
+const workbook = parseWorkbook(buffer)
 
 // Export to XLSX file
-const output = await exportXLSX(cells)
+const output = await toXLSX({
+  sheets: workbook.sheets.map(sheet => ({
+    name: sheet.name,
+    cells: sheet.cells
+  }))
+})
 await fs.writeFile('output.xlsx', output)
+
+// Export sheet to CSV
+const csv = toCSV({
+  name: 'Sheet1',
+  cells: workbook.sheets[0].cells
+})
+await fs.writeFile('output.csv', csv)
+
+// Extract rows as documents
+const rows = rowsFromSheet(worksheet, { headers: true })
 ```
 
 ## API Reference
@@ -448,6 +463,51 @@ interface R1C1Reference {
 }
 ```
 
+### Import Module (`excel.do/import`)
+
+#### Functions
+
+- **`parseWorkbook(data: Buffer | Uint8Array | ArrayBuffer, options?: ImportOptions): ParsedWorkbook`**
+  - Parse an XLSX buffer into workbook structure
+  - Returns: `{ name, sheets: ParsedSheet[], metadata? }`
+
+- **`parseSheet(worksheet: XLSX.WorkSheet, name: string, options?: ImportOptions): ParsedSheet`**
+  - Parse a SheetJS worksheet into sheet structure
+  - Returns: `{ name, cells: ImportedCell[], dimensions?, merges?, columnWidths?, rowHeights? }`
+
+- **`rowsFromSheet(worksheet: XLSX.WorkSheet, options?: ImportOptions): RowDocument[]`**
+  - Extract rows as documents from a worksheet
+  - Supports header detection, custom headers, and data filtering
+  - Returns: Array of row objects with column values
+
+- **`cellFromSheetJS(sjsCell: XLSX.CellObject, sheet: string, col: string, row: number, options?: ImportOptions): ImportedCell`**
+  - Convert a SheetJS cell to excel.do Cell type
+  - Handles type inference, formatting, and metadata extraction
+
+### Export Module (`excel.do/export`)
+
+#### Functions
+
+- **`toWorkbook(workbookData: WorkbookData, options?: ExportOptions): XLSX.WorkBook`**
+  - Convert workbook data to a SheetJS WorkBook
+  - Returns: SheetJS WorkBook with sheets and metadata
+
+- **`toSheet(sheetData: SheetData, options?: ExportOptions): XLSX.WorkSheet`**
+  - Convert sheet data to a SheetJS WorkSheet
+  - Includes cell data, column widths, row heights, and merges
+
+- **`toXLSX(workbookData: WorkbookData, options?: ExportOptions): Promise<Buffer>`**
+  - Generate an XLSX buffer from workbook data
+  - Async function that returns Buffer ready for file writing
+
+- **`toCSV(sheetData: SheetData, options?: ExportOptions): string`**
+  - Generate a CSV string from sheet data
+  - Supports custom delimiters, headers, and formatting
+
+- **`cellToSheetJS(cell: Cell, options?: ExportOptions): XLSX.CellObject`**
+  - Convert an excel.do Cell to a SheetJS CellObject
+  - Handles formatting, formulas, and metadata preservation
+
 ### Formula Module (`excel.do/formula`)
 
 #### Functions
@@ -508,11 +568,11 @@ import * as excel from 'excel.do'
 // Cell module
 import { createCell, parseA1, expandRange } from 'excel.do/cell'
 
-// Sheet module
-import { createSheet, updateCell } from 'excel.do/sheet'
+// Import module
+import { parseWorkbook, parseSheet, rowsFromSheet, cellFromSheetJS } from 'excel.do/import'
 
-// Workbook module
-import { createWorkbook, addSheet } from 'excel.do/workbook'
+// Export module
+import { toXLSX, toCSV, toWorkbook, toSheet, cellToSheetJS } from 'excel.do/export'
 
 // Formula module
 import { parseFormula, tokenize } from 'excel.do/formula'
