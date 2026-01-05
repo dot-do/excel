@@ -9,10 +9,10 @@ import type {
   CellValue,
   CellValueType,
   CellFormat,
+  CellFill,
   CellPrimitive,
   CellErrorValue,
   CreateCellOptions,
-  UpdateCellOptions,
 } from '../types'
 import { colToIndex } from './address'
 
@@ -271,7 +271,7 @@ export function mergeCellFormat(
 
   // Merge fill
   if (base.fill || override.fill) {
-    merged.fill = { ...base.fill, ...override.fill }
+    merged.fill = { ...base.fill, ...override.fill } as CellFill
   }
 
   // Merge border

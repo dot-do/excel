@@ -7,7 +7,6 @@
 
 import type {
   Token,
-  ASTNode,
   ProgramNode,
   ParseResult,
   ParserOptions,
@@ -34,7 +33,7 @@ export class NotImplementedError extends Error {
  * tokenize('=A1+B1') // Returns tokens for A1, +, B1
  * tokenize('=SUM(A1:A10)') // Returns tokens for SUM(, A1:A10, )
  */
-export function tokenize(formula: string): Token[] {
+export function tokenize(_formula: string): Token[] {
   throw new NotImplementedError('tokenize')
 }
 
@@ -50,7 +49,7 @@ export function tokenize(formula: string): Token[] {
  * parse('=A1+B1') // Returns AST with BinaryExpression
  * parse('=SUM(A1:A10)') // Returns AST with FunctionCall
  */
-export function parse(formula: string, options?: ParserOptions): ParseResult {
+export function parse(_formula: string, _options?: ParserOptions): ParseResult {
   throw new NotImplementedError('parse')
 }
 
@@ -62,7 +61,7 @@ export function parse(formula: string, options?: ParserOptions): ParseResult {
  * @returns The root AST node
  * @throws {NotImplementedError} - Not yet implemented
  */
-export function parseTokens(tokens: Token[], options?: ParserOptions): ProgramNode {
+export function parseTokens(_tokens: Token[], _options?: ParserOptions): ProgramNode {
   throw new NotImplementedError('parseTokens')
 }
 
@@ -74,7 +73,7 @@ export function parseTokens(tokens: Token[], options?: ParserOptions): ProgramNo
  * @returns true if formula appears valid, false otherwise
  * @throws {NotImplementedError} - Not yet implemented
  */
-export function validateFormula(formula: string): boolean {
+export function validateFormula(_formula: string): boolean {
   throw new NotImplementedError('validateFormula')
 }
 
@@ -85,7 +84,7 @@ export function validateFormula(formula: string): boolean {
  * @returns Array of cell reference strings (e.g., ['A1', 'B2', 'Sheet1!C3'])
  * @throws {NotImplementedError} - Not yet implemented
  */
-export function extractCellReferences(formula: string): string[] {
+export function extractCellReferences(_formula: string): string[] {
   throw new NotImplementedError('extractCellReferences')
 }
 
@@ -96,7 +95,7 @@ export function extractCellReferences(formula: string): string[] {
  * @returns Array of range reference strings (e.g., ['A1:B10', 'Sheet1!C1:C100'])
  * @throws {NotImplementedError} - Not yet implemented
  */
-export function extractRangeReferences(formula: string): string[] {
+export function extractRangeReferences(_formula: string): string[] {
   throw new NotImplementedError('extractRangeReferences')
 }
 
@@ -107,7 +106,7 @@ export function extractRangeReferences(formula: string): string[] {
  * @returns Object with cells and ranges arrays
  * @throws {NotImplementedError} - Not yet implemented
  */
-export function getDependencies(formula: string): {
+export function getDependencies(_formula: string): {
   cells: string[]
   ranges: string[]
 } {

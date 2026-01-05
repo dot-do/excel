@@ -146,12 +146,16 @@ export interface CellReferenceNode extends ASTNodeBase {
 /**
  * Range reference: A1:B10, $A$1:$B$10
  */
-export interface RangeReferenceNode extends ASTNodeBase {
+export interface RangeReferenceNode extends Omit<ASTNodeBase, 'start' | 'end'> {
   type: 'RangeReference'
+  /** Starting position in source */
+  start: number
+  /** Ending position in source */
+  end: number
   /** Start cell of range */
-  start: CellReferenceNode
+  startCell: CellReferenceNode
   /** End cell of range */
-  end: CellReferenceNode
+  endCell: CellReferenceNode
   /** Sheet name if cross-sheet reference */
   sheet?: string
 }

@@ -9,7 +9,6 @@ import type {
   RangeReference,
   R1C1Reference,
   ParsedReference,
-  ConvertOptions,
   ReferenceType,
 } from '../types'
 

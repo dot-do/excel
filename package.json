@@ -4,6 +4,7 @@
   "description": "Spreadsheets at the Edge - mongo.do + gitx.do powered spreadsheet engine",
   "type": "module",
   "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
@@ -14,22 +15,20 @@
       "types": "./dist/cell/index.d.ts",
       "import": "./dist/cell/index.js"
     },
-    "./sheet": {
-      "types": "./dist/sheet/index.d.ts",
-      "import": "./dist/sheet/index.js"
-    },
-    "./workbook": {
-      "types": "./dist/workbook/index.d.ts",
-      "import": "./dist/workbook/index.js"
-    },
     "./formula": {
       "types": "./dist/formula/index.d.ts",
       "import": "./dist/formula/index.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "wrangler dev",
     "build": "tsup",
+    "prepublishOnly": "npm run build",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -62,7 +61,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nathanclevenger/excel.do"
+    "url": "git+https://github.com/nathanclevenger/excel.do.git"
+  },
+  "homepage": "https://excel.do",
+  "bugs": {
+    "url": "https://github.com/nathanclevenger/excel.do/issues"
   },
   "keywords": [
     "spreadsheet",
@@ -75,5 +78,8 @@
     "git",
     "version-control",
     "collaboration"
-  ]
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

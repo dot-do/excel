@@ -746,19 +746,19 @@ describe('parse()', () => {
       const body = parseBody('=A1:B10') as RangeReferenceNode
 
       expect(body.type).toBe('RangeReference')
-      expect(body.start.column).toBe('A')
-      expect(body.start.row).toBe(1)
-      expect(body.end.column).toBe('B')
-      expect(body.end.row).toBe(10)
+      expect(body.startCell.column).toBe('A')
+      expect(body.startCell.row).toBe(1)
+      expect(body.endCell.column).toBe('B')
+      expect(body.endCell.row).toBe(10)
     })
 
     it('should parse absolute range ($A$1:$B$10)', () => {
       const body = parseBody('=$A$1:$B$10') as RangeReferenceNode
 
-      expect(body.start.columnAbsolute).toBe(true)
-      expect(body.start.rowAbsolute).toBe(true)
-      expect(body.end.columnAbsolute).toBe(true)
-      expect(body.end.rowAbsolute).toBe(true)
+      expect(body.startCell.columnAbsolute).toBe(true)
+      expect(body.startCell.rowAbsolute).toBe(true)
+      expect(body.endCell.columnAbsolute).toBe(true)
+      expect(body.endCell.rowAbsolute).toBe(true)
     })
 
     it('should parse sheet-qualified range (Sheet1!A1:B10)', () => {
