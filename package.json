@@ -1,0 +1,79 @@
+{
+  "name": "excel.do",
+  "version": "0.1.0",
+  "description": "Spreadsheets at the Edge - mongo.do + gitx.do powered spreadsheet engine",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cell": {
+      "types": "./dist/cell/index.d.ts",
+      "import": "./dist/cell/index.js"
+    },
+    "./sheet": {
+      "types": "./dist/sheet/index.d.ts",
+      "import": "./dist/sheet/index.js"
+    },
+    "./workbook": {
+      "types": "./dist/workbook/index.d.ts",
+      "import": "./dist/workbook/index.js"
+    },
+    "./formula": {
+      "types": "./dist/formula/index.d.ts",
+      "import": "./dist/formula/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "tsup",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "xlsx": "^0.18.5",
+    "bson": "^6.10.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241230.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^3.99.0"
+  },
+  "peerDependencies": {
+    "mongo.do": ">=0.1.0",
+    "gitx.do": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "mongo.do": { "optional": true },
+    "gitx.do": { "optional": true }
+  },
+  "author": "Nathan Clevenger",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nathanclevenger/excel.do"
+  },
+  "keywords": [
+    "spreadsheet",
+    "excel",
+    "xlsx",
+    "cloudflare",
+    "workers",
+    "edge",
+    "mongodb",
+    "git",
+    "version-control",
+    "collaboration"
+  ]
+}

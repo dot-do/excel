@@ -1,0 +1,66 @@
+{
+  "name": "excel-do",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Durable Objects for spreadsheet state
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKBOOK",
+        "class_name": "WorkbookDO"
+      },
+      {
+        "name": "SHEET",
+        "class_name": "SheetDO"
+      }
+    ]
+  },
+
+  // Migrations for Durable Objects
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WorkbookDO", "SheetDO"]
+    }
+  ],
+
+  // Service bindings to mongo.do and gitx.do
+  "services": [
+    {
+      "binding": "MONGO",
+      "service": "mongo-do"
+    },
+    {
+      "binding": "GITX",
+      "service": "gitx-do"
+    }
+  ],
+
+  // Vectorize for semantic cell search
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "excel-cells"
+    }
+  ],
+
+  // AI for embeddings and formula generation
+  "ai": {
+    "binding": "AI"
+  },
+
+  // R2 for large file storage
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "excel-files"
+    }
+  ],
+
+  // Environment variables
+  "vars": {
+    "ENVIRONMENT": "development"
+  }
+}
