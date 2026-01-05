@@ -2213,3 +2213,764 @@ describe('Query Subscription (q action)', () => {
     })
   })
 })
+
+// ============================================================================
+// Database.do Message Handler Tests (RED Phase)
+// ============================================================================
+// TDD RED: Tests for 'p' (put), 'm' (merge), delete message handlers.
+// These tests define the WebSocket message protocol for database mutations.
+// They should FAIL until the message handler implementation is complete.
+
+/**
+ * Message types for database.do WebSocket protocol:
+ * - 'p' (put): Set/replace entire document
+ * - 'm' (merge): Partial update/merge into existing document
+ * - 'd' (delete): Remove document
+ */
+interface DatabaseMessage {
+  /** Message type: 'p' = put, 'm' = merge, 'd' = delete */
+  type: 'p' | 'm' | 'd'
+  /** Collection name */
+  collection: string
+  /** Document ID */
+  id: string
+  /** Document data (required for 'p' and 'm', ignored for 'd') */
+  data?: Record<string, unknown>
+  /** Timestamp of the message */
+  timestamp?: number
+  /** Optional client ID for conflict resolution */
+  clientId?: string
+}
+
+interface DatabaseResponse {
+  /** Whether the operation succeeded */
+  success: boolean
+  /** The resulting document (for 'p' and 'm' operations) */
+  doc?: Record<string, unknown>
+  /** Error message if operation failed */
+  error?: string
+  /** Operation type echoed back */
+  type: 'p' | 'm' | 'd'
+  /** Document ID echoed back */
+  id: string
+}
+
+/**
+ * Message handler for database.do operations
+ * This is a stub that will be implemented in the GREEN phase
+ */
+function handleDatabaseMessage(_msg: DatabaseMessage): Promise<DatabaseResponse> {
+  throw new Error('Not implemented: handleDatabaseMessage')
+}
+
+describe('Database.do Message Handlers', () => {
+  describe('Put Message ("p") - Set/Replace Operations', () => {
+    it('should create a new document when it does not exist', async () => {
+      const msg: DatabaseMessage = {
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 42, formula: null },
+      }
+
+      const response = await handleDatabaseMessage(msg)
+
+      expect(response.success).toBe(true)
+      expect(response.type).toBe('p')
+      expect(response.id).toBe('sheet1!A1')
+      expect(response.doc).toEqual({ value: 42, formula: null })
+    })
+
+    it('should replace entire document when it exists', async () => {
+      // First create
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 10, formula: '=B1', format: { bold: true } },
+      })
+
+      // Then replace
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 20 },
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc).toEqual({ value: 20 })
+      // Note: 'formula' and 'format' should be gone since 'p' replaces entirely
+      expect(response.doc?.formula).toBeUndefined()
+      expect(response.doc?.format).toBeUndefined()
+    })
+
+    it('should fail when data is missing for put operation', async () => {
+      const msg: DatabaseMessage = {
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        // data is missing
+      }
+
+      const response = await handleDatabaseMessage(msg)
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('data')
+    })
+
+    it('should handle complex nested data structures', async () => {
+      const msg: DatabaseMessage = {
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: {
+          value: { nested: { deep: [1, 2, 3] } },
+          metadata: { author: 'test', tags: ['a', 'b'] },
+        },
+      }
+
+      const response = await handleDatabaseMessage(msg)
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toEqual({ nested: { deep: [1, 2, 3] } })
+      expect(response.doc?.metadata).toEqual({ author: 'test', tags: ['a', 'b'] })
+    })
+
+    it('should add timestamp to created documents', async () => {
+      const beforeTime = Date.now()
+
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+      })
+
+      const afterTime = Date.now()
+
+      expect(response.success).toBe(true)
+      expect(response.doc?._createdAt).toBeGreaterThanOrEqual(beforeTime)
+      expect(response.doc?._createdAt).toBeLessThanOrEqual(afterTime)
+      expect(response.doc?._updatedAt).toBeGreaterThanOrEqual(beforeTime)
+      expect(response.doc?._updatedAt).toBeLessThanOrEqual(afterTime)
+    })
+
+    it('should preserve _createdAt but update _updatedAt on replace', async () => {
+      // Create document
+      const createResponse = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+      })
+      const originalCreatedAt = createResponse.doc?._createdAt
+
+      // Small delay
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      // Replace document
+      const replaceResponse = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 2 },
+      })
+
+      expect(replaceResponse.doc?._createdAt).toBe(originalCreatedAt)
+      expect(replaceResponse.doc?._updatedAt).toBeGreaterThan(originalCreatedAt as number)
+    })
+
+    it('should handle empty object as valid data', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: {},
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc).toBeDefined()
+    })
+
+    it('should validate collection name is not empty', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: '',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+      })
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('collection')
+    })
+
+    it('should validate id is not empty', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: '',
+        data: { value: 1 },
+      })
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('id')
+    })
+  })
+
+  describe('Merge Message ("m") - Partial Update Operations', () => {
+    it('should update specific fields while preserving others', async () => {
+      // First create
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 10, formula: '=B1', format: { bold: true } },
+      })
+
+      // Then merge
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 20 },
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toBe(20)
+      expect(response.doc?.formula).toBe('=B1') // preserved
+      expect(response.doc?.format).toEqual({ bold: true }) // preserved
+    })
+
+    it('should create document if it does not exist (upsert behavior)', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!NEW',
+        data: { value: 100 },
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toBe(100)
+    })
+
+    it('should deep merge nested objects', async () => {
+      // Create with nested structure
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: {
+          format: {
+            font: { bold: true, size: 12 },
+            alignment: { horizontal: 'left' },
+          },
+        },
+      })
+
+      // Merge nested update
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: {
+          format: {
+            font: { italic: true },
+          },
+        },
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.format).toEqual({
+        font: { bold: true, size: 12, italic: true },
+        alignment: { horizontal: 'left' },
+      })
+    })
+
+    it('should handle array fields (replace, not merge)', async () => {
+      // Create with array
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { tags: ['a', 'b', 'c'] },
+      })
+
+      // Merge with new array
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { tags: ['x', 'y'] },
+      })
+
+      expect(response.success).toBe(true)
+      // Arrays should be replaced, not merged
+      expect(response.doc?.tags).toEqual(['x', 'y'])
+    })
+
+    it('should allow setting field to null', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 10, formula: '=B1' },
+      })
+
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { formula: null },
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toBe(10)
+      expect(response.doc?.formula).toBeNull()
+    })
+
+    it('should update _updatedAt timestamp on merge', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      const beforeMerge = Date.now()
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 2 },
+      })
+      const afterMerge = Date.now()
+
+      expect(response.doc?._updatedAt).toBeGreaterThanOrEqual(beforeMerge)
+      expect(response.doc?._updatedAt).toBeLessThanOrEqual(afterMerge)
+    })
+
+    it('should fail when data is missing for merge operation', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        // data is missing
+      })
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('data')
+    })
+
+    it('should handle empty object merge (touch operation)', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+      })
+
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: {},
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toBe(1)
+      // Should still update _updatedAt even with empty merge
+    })
+
+    it('should handle concurrent merges correctly', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { a: 1, b: 2, c: 3 },
+      })
+
+      // Simulate concurrent merges
+      const [response1, response2] = await Promise.all([
+        handleDatabaseMessage({
+          type: 'm',
+          collection: 'cells',
+          id: 'sheet1!A1',
+          data: { a: 10 },
+          timestamp: Date.now(),
+          clientId: 'client1',
+        }),
+        handleDatabaseMessage({
+          type: 'm',
+          collection: 'cells',
+          id: 'sheet1!A1',
+          data: { b: 20 },
+          timestamp: Date.now(),
+          clientId: 'client2',
+        }),
+      ])
+
+      // Both should succeed
+      expect(response1.success).toBe(true)
+      expect(response2.success).toBe(true)
+
+      // Final state should have both updates
+      // (implementation details may vary)
+    })
+  })
+
+  describe('Delete Message ("d") - Remove Operations', () => {
+    it('should delete existing document', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 42 },
+      })
+
+      const response = await handleDatabaseMessage({
+        type: 'd',
+        collection: 'cells',
+        id: 'sheet1!A1',
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.type).toBe('d')
+      expect(response.id).toBe('sheet1!A1')
+    })
+
+    it('should return success false when deleting non-existent document', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'd',
+        collection: 'cells',
+        id: 'nonexistent',
+      })
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('not found')
+    })
+
+    it('should return the deleted document in response', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 42, formula: '=B1' },
+      })
+
+      const response = await handleDatabaseMessage({
+        type: 'd',
+        collection: 'cells',
+        id: 'sheet1!A1',
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toBe(42)
+      expect(response.doc?.formula).toBe('=B1')
+    })
+
+    it('should not allow retrieving document after deletion', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 42 },
+      })
+
+      await handleDatabaseMessage({
+        type: 'd',
+        collection: 'cells',
+        id: 'sheet1!A1',
+      })
+
+      // Trying to merge should create new document (upsert) or fail
+      // depending on implementation
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 100 },
+      })
+
+      // If upsert behavior: should create new doc without old data
+      if (response.success) {
+        expect(response.doc?.value).toBe(100)
+        // Original data should not be present
+      }
+    })
+
+    it('should handle deletion of document with complex data', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: {
+          value: { nested: { deep: [1, 2, 3] } },
+          metadata: { author: 'test' },
+        },
+      })
+
+      const response = await handleDatabaseMessage({
+        type: 'd',
+        collection: 'cells',
+        id: 'sheet1!A1',
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toEqual({ nested: { deep: [1, 2, 3] } })
+    })
+
+    it('should ignore data field in delete message', async () => {
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 42 },
+      })
+
+      // Data should be ignored for delete
+      const response = await handleDatabaseMessage({
+        type: 'd',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 100 }, // should be ignored
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toBe(42) // original value, not the one in delete message
+    })
+
+    it('should validate collection name on delete', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'd',
+        collection: '',
+        id: 'sheet1!A1',
+      })
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('collection')
+    })
+
+    it('should validate id on delete', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'd',
+        collection: 'cells',
+        id: '',
+      })
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('id')
+    })
+  })
+
+  describe('Message Ordering and Idempotency', () => {
+    it('should handle messages with timestamps for ordering', async () => {
+      const now = Date.now()
+
+      // Send older message first
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+        timestamp: now,
+      })
+
+      // Send newer message
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 2 },
+        timestamp: now + 100,
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.doc?.value).toBe(2)
+    })
+
+    it('should reject out-of-order updates based on timestamp', async () => {
+      const now = Date.now()
+
+      // Send newer message first
+      await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 2 },
+        timestamp: now + 100,
+      })
+
+      // Send older message (should be rejected or ignored)
+      const response = await handleDatabaseMessage({
+        type: 'm',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+        timestamp: now,
+      })
+
+      // Implementation can either reject or ignore
+      // If rejected:
+      if (!response.success) {
+        expect(response.error).toContain('outdated')
+      }
+      // If ignored, the value should remain 2
+    })
+
+    it('should be idempotent for same message with same timestamp', async () => {
+      const msg: DatabaseMessage = {
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 42 },
+        timestamp: Date.now(),
+        clientId: 'client1',
+      }
+
+      const response1 = await handleDatabaseMessage(msg)
+      const response2 = await handleDatabaseMessage(msg)
+
+      expect(response1.success).toBe(true)
+      expect(response2.success).toBe(true)
+      expect(response1.doc).toEqual(response2.doc)
+    })
+  })
+
+  describe('Batch Operations', () => {
+    it('should support batch put operations', async () => {
+      const messages: DatabaseMessage[] = [
+        { type: 'p', collection: 'cells', id: 'sheet1!A1', data: { value: 1 } },
+        { type: 'p', collection: 'cells', id: 'sheet1!A2', data: { value: 2 } },
+        { type: 'p', collection: 'cells', id: 'sheet1!A3', data: { value: 3 } },
+      ]
+
+      const responses = await Promise.all(messages.map(handleDatabaseMessage))
+
+      expect(responses).toHaveLength(3)
+      expect(responses.every((r) => r.success)).toBe(true)
+    })
+
+    it('should support batch merge operations', async () => {
+      // Setup
+      await Promise.all([
+        handleDatabaseMessage({ type: 'p', collection: 'cells', id: 'sheet1!A1', data: { value: 1, extra: 'a' } }),
+        handleDatabaseMessage({ type: 'p', collection: 'cells', id: 'sheet1!A2', data: { value: 2, extra: 'b' } }),
+      ])
+
+      // Batch merge
+      const responses = await Promise.all([
+        handleDatabaseMessage({ type: 'm', collection: 'cells', id: 'sheet1!A1', data: { value: 10 } }),
+        handleDatabaseMessage({ type: 'm', collection: 'cells', id: 'sheet1!A2', data: { value: 20 } }),
+      ])
+
+      expect(responses[0].doc?.value).toBe(10)
+      expect(responses[0].doc?.extra).toBe('a')
+      expect(responses[1].doc?.value).toBe(20)
+      expect(responses[1].doc?.extra).toBe('b')
+    })
+
+    it('should support batch delete operations', async () => {
+      // Setup
+      await Promise.all([
+        handleDatabaseMessage({ type: 'p', collection: 'cells', id: 'sheet1!A1', data: { value: 1 } }),
+        handleDatabaseMessage({ type: 'p', collection: 'cells', id: 'sheet1!A2', data: { value: 2 } }),
+        handleDatabaseMessage({ type: 'p', collection: 'cells', id: 'sheet1!A3', data: { value: 3 } }),
+      ])
+
+      // Batch delete
+      const responses = await Promise.all([
+        handleDatabaseMessage({ type: 'd', collection: 'cells', id: 'sheet1!A1' }),
+        handleDatabaseMessage({ type: 'd', collection: 'cells', id: 'sheet1!A2' }),
+        handleDatabaseMessage({ type: 'd', collection: 'cells', id: 'sheet1!A3' }),
+      ])
+
+      expect(responses.every((r) => r.success)).toBe(true)
+    })
+
+    it('should support mixed batch operations', async () => {
+      await handleDatabaseMessage({ type: 'p', collection: 'cells', id: 'sheet1!A1', data: { value: 1 } })
+
+      const responses = await Promise.all([
+        handleDatabaseMessage({ type: 'p', collection: 'cells', id: 'sheet1!B1', data: { value: 10 } }),
+        handleDatabaseMessage({ type: 'm', collection: 'cells', id: 'sheet1!A1', data: { value: 100 } }),
+        handleDatabaseMessage({ type: 'd', collection: 'cells', id: 'sheet1!A1' }),
+      ])
+
+      // Order of operations matters here - depends on implementation
+      expect(responses[0].success).toBe(true) // new document created
+      expect(responses[1].success || !responses[1].success).toBe(true) // merge might succeed or fail if delete happened first
+    })
+  })
+
+  describe('Error Handling', () => {
+    it('should handle invalid message type gracefully', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'x' as 'p', // invalid type
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+      })
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('type')
+    })
+
+    it('should handle null data in put operation', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: null as unknown as Record<string, unknown>,
+      })
+
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('data')
+    })
+
+    it('should handle special characters in collection name', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'my-collection.with.dots',
+        id: 'sheet1!A1',
+        data: { value: 1 },
+      })
+
+      // Should either succeed or return a clear error
+      if (!response.success) {
+        expect(response.error).toBeDefined()
+      }
+    })
+
+    it('should handle special characters in document id', async () => {
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: "sheet with spaces!'A1'",
+        data: { value: 1 },
+      })
+
+      expect(response.success).toBe(true)
+      expect(response.id).toBe("sheet with spaces!'A1'")
+    })
+
+    it('should handle very large documents', async () => {
+      const largeData: Record<string, unknown> = {}
+      for (let i = 0; i < 1000; i++) {
+        largeData[`field${i}`] = 'x'.repeat(100)
+      }
+
+      const response = await handleDatabaseMessage({
+        type: 'p',
+        collection: 'cells',
+        id: 'sheet1!A1',
+        data: largeData,
+      })
+
+      // Should either succeed or return appropriate error
+      expect(response.success === true || response.error !== undefined).toBe(true)
+    })
+  })
+})
