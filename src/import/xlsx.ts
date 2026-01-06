@@ -5,8 +5,8 @@
  */
 
 import * as XLSX from 'xlsx'
-import type { Cell, CellFormat, CellMetadata, CellValue, CellValueType, CellErrorValue } from '../types'
-import { colToIndex, indexToCol, parseRange as parseRangeRef, parseA1 } from '../cell/address'
+import type { Cell, CellFormat, CellMetadata, CellValue, CellValueType, CellErrorValue, CellPrimitive } from '../types'
+import { colToIndex, indexToCol } from '../cell/address'
 
 /** Import options */
 export interface ImportOptions {
@@ -228,10 +228,43 @@ function parseRangeString(rangeStr: string): { startRow: number; endRow: number;
   return null
 }
 
+/** SheetJS cell style type (internal representation) */
+interface SJSStyle {
+  font?: {
+    bold?: boolean
+    italic?: boolean
+    underline?: boolean
+    strike?: boolean
+    sz?: number
+    name?: string
+    color?: { rgb?: string }
+  }
+  fill?: {
+    patternType?: string
+    fgColor?: { rgb?: string }
+  }
+  border?: {
+    top?: { style?: string; color?: { rgb?: string } }
+    bottom?: { style?: string; color?: { rgb?: string } }
+    left?: { style?: string; color?: { rgb?: string } }
+    right?: { style?: string; color?: { rgb?: string } }
+  }
+  alignment?: {
+    horizontal?: string
+    vertical?: string
+    wrapText?: boolean
+    textRotation?: number
+  }
+  protection?: {
+    locked?: boolean
+    hidden?: boolean
+  }
+}
+
 /**
  * Convert SheetJS style to our CellFormat
  */
-function convertStyle(sjsStyle: XLSX.CellStyle | undefined): CellFormat | undefined {
+function convertStyle(sjsStyle: SJSStyle | undefined): CellFormat | undefined {
   if (!sjsStyle) return undefined
 
   const format: CellFormat = {}
@@ -252,10 +285,10 @@ function convertStyle(sjsStyle: XLSX.CellStyle | undefined): CellFormat | undefi
 
   // Fill styling
   if (sjsStyle.fill) {
-    format.fill = {}
-    if (sjsStyle.fill.patternType) {
-      format.fill.type = sjsStyle.fill.patternType
-    }
+    const fillType = sjsStyle.fill.patternType === 'solid' ? 'solid'
+      : sjsStyle.fill.patternType === 'gradient' ? 'gradient'
+      : 'pattern'
+    format.fill = { type: fillType as 'solid' | 'pattern' | 'gradient' }
     if (sjsStyle.fill.fgColor?.rgb) {
       format.fill.color = `#${sjsStyle.fill.fgColor.rgb}`
     }
@@ -264,11 +297,28 @@ function convertStyle(sjsStyle: XLSX.CellStyle | undefined): CellFormat | undefi
   // Border styling
   if (sjsStyle.border) {
     format.border = {}
+    const borderStyleMap: Record<string, 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double' | 'none'> = {
+      'thin': 'thin',
+      'medium': 'medium',
+      'thick': 'thick',
+      'dashed': 'dashed',
+      'dotted': 'dotted',
+      'double': 'double',
+      'none': 'none',
+      'hair': 'thin',
+      'mediumDashed': 'dashed',
+      'dashDot': 'dashed',
+      'mediumDashDot': 'dashed',
+      'dashDotDot': 'dashed',
+      'mediumDashDotDot': 'dashed',
+      'slantDashDot': 'dashed',
+    }
     for (const side of ['top', 'bottom', 'left', 'right'] as const) {
-      if (sjsStyle.border[side]) {
+      const borderSide = sjsStyle.border[side]
+      if (borderSide?.style) {
         format.border[side] = {
-          style: sjsStyle.border[side].style,
-          color: sjsStyle.border[side].color?.rgb ? `#${sjsStyle.border[side].color.rgb}` : undefined
+          style: borderStyleMap[borderSide.style] || 'thin',
+          color: borderSide.color?.rgb ? `#${borderSide.color.rgb}` : undefined
         }
       }
     }
@@ -277,8 +327,8 @@ function convertStyle(sjsStyle: XLSX.CellStyle | undefined): CellFormat | undefi
   // Alignment
   if (sjsStyle.alignment) {
     format.alignment = {}
-    if (sjsStyle.alignment.horizontal) format.alignment.horizontal = sjsStyle.alignment.horizontal as CellFormat['alignment']['horizontal']
-    if (sjsStyle.alignment.vertical) format.alignment.vertical = sjsStyle.alignment.vertical as CellFormat['alignment']['vertical']
+    if (sjsStyle.alignment.horizontal) format.alignment.horizontal = sjsStyle.alignment.horizontal as NonNullable<CellFormat['alignment']>['horizontal']
+    if (sjsStyle.alignment.vertical) format.alignment.vertical = sjsStyle.alignment.vertical as NonNullable<CellFormat['alignment']>['vertical']
     if (sjsStyle.alignment.wrapText) format.alignment.wrapText = true
     if (sjsStyle.alignment.textRotation) format.alignment.textRotation = sjsStyle.alignment.textRotation
   }
@@ -469,7 +519,7 @@ export function cellFromSheetJS(
   const _id = getCellId(sheet, col, row)
 
   // Determine value and type
-  let value: unknown = sjsCell.v
+  let value: CellPrimitive = sjsCell.v as CellPrimitive
   let valueType: CellValueType
 
   // Handle different SheetJS cell types
@@ -582,7 +632,7 @@ export function cellFromSheetJS(
   // Add number format
   if (options?.preserveStyles && sjsCell.z) {
     cell.format = cell.format || {}
-    cell.format.numberFormat = sjsCell.z
+    cell.format.numberFormat = String(sjsCell.z)
   }
 
   // Add metadata if populated

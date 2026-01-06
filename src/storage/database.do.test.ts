@@ -1,8 +1,7 @@
 /**
  * Database Durable Object Child Event Tests
  *
- * TDD RED: Tests for child event differentiation in database.do.
- * These tests should FAIL until implementation is complete.
+ * Tests for child event differentiation in database.do.
  *
  * Child events are Firebase-style real-time events:
  * - onChildAdded: Emitted when a new document is added to a collection
@@ -14,120 +13,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { Cell } from '../types'
 import type { Sheet, Workbook } from './types'
-
-// ============================================================================
-// Types for Child Events
-// ============================================================================
-
-/** Event types for child event differentiation */
-export type ChildEventType = 'child_added' | 'child_changed' | 'child_removed' | 'child_moved'
-
-/** Base child event payload */
-export interface ChildEvent<T = unknown> {
-  /** Type of child event */
-  type: ChildEventType
-  /** The collection/path this event occurred in */
-  collection: string
-  /** The document key/ID */
-  key: string
-  /** Current value of the document (null for removed) */
-  data: T | null
-  /** Previous value before change (null for added) */
-  previousData?: T | null
-  /** Previous sibling key for ordering (for onChildMoved) */
-  previousKey?: string | null
-  /** New sibling key for ordering (for onChildMoved) */
-  newPreviousKey?: string | null
-  /** Timestamp of the event */
-  timestamp: number
-}
-
-/** Callback function for child event listeners */
-export type ChildEventCallback<T = unknown> = (event: ChildEvent<T>) => void
-
-/** Interface for objects that emit child events */
-export interface ChildEventEmitter {
-  onChildAdded<T>(collection: string, callback: ChildEventCallback<T>): () => void
-  onChildChanged<T>(collection: string, callback: ChildEventCallback<T>): () => void
-  onChildRemoved<T>(collection: string, callback: ChildEventCallback<T>): () => void
-  onChildMoved<T>(collection: string, callback: ChildEventCallback<T>): () => void
-  off(collection: string, eventType?: ChildEventType): void
-}
-
-/** Interface for the DatabaseDO that will implement child events */
-export interface DatabaseDO extends ChildEventEmitter {
-  // Collection operations that should emit events
-  insert<T>(collection: string, key: string, data: T): Promise<T>
-  update<T>(collection: string, key: string, data: Partial<T>): Promise<T>
-  delete(collection: string, key: string): Promise<boolean>
-  move<T>(collection: string, key: string, newPosition: number): Promise<T>
-  get<T>(collection: string, key: string): Promise<T | null>
-  list<T>(collection: string): Promise<T[]>
-}
-
-// ============================================================================
-// Mock DatabaseDO (Stub Implementation)
-// ============================================================================
-
-/**
- * Stub implementation that should fail all tests.
- * The real implementation will be in the GREEN phase.
- */
-class StubDatabaseDO implements DatabaseDO {
-  onChildAdded<T>(_collection: string, _callback: ChildEventCallback<T>): () => void {
-    throw new Error('Not implemented: onChildAdded')
-  }
-
-  onChildChanged<T>(_collection: string, _callback: ChildEventCallback<T>): () => void {
-    throw new Error('Not implemented: onChildChanged')
-  }
-
-  onChildRemoved<T>(_collection: string, _callback: ChildEventCallback<T>): () => void {
-    throw new Error('Not implemented: onChildRemoved')
-  }
-
-  onChildMoved<T>(_collection: string, _callback: ChildEventCallback<T>): () => void {
-    throw new Error('Not implemented: onChildMoved')
-  }
-
-  off(_collection: string, _eventType?: ChildEventType): void {
-    throw new Error('Not implemented: off')
-  }
-
-  async insert<T>(_collection: string, _key: string, _data: T): Promise<T> {
-    throw new Error('Not implemented: insert')
-  }
-
-  async update<T>(_collection: string, _key: string, _data: Partial<T>): Promise<T> {
-    throw new Error('Not implemented: update')
-  }
-
-  async delete(_collection: string, _key: string): Promise<boolean> {
-    throw new Error('Not implemented: delete')
-  }
-
-  async move<T>(_collection: string, _key: string, _newPosition: number): Promise<T> {
-    throw new Error('Not implemented: move')
-  }
-
-  async get<T>(_collection: string, _key: string): Promise<T | null> {
-    throw new Error('Not implemented: get')
-  }
-
-  async list<T>(_collection: string): Promise<T[]> {
-    throw new Error('Not implemented: list')
-  }
-}
+import { DatabaseDO, type ChildEvent, type ChildEventType, type DatabaseDOInterface } from './database-do'
 
 // ============================================================================
 // onChildAdded Event Tests
 // ============================================================================
 
 describe('onChildAdded', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   describe('event registration', () => {
@@ -289,10 +185,10 @@ describe('onChildAdded', () => {
 // ============================================================================
 
 describe('onChildChanged', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   describe('event registration', () => {
@@ -440,10 +336,10 @@ describe('onChildChanged', () => {
 // ============================================================================
 
 describe('onChildRemoved', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   describe('event registration', () => {
@@ -574,10 +470,10 @@ describe('onChildRemoved', () => {
 // ============================================================================
 
 describe('onChildMoved', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   describe('event registration', () => {
@@ -683,9 +579,11 @@ describe('onChildMoved', () => {
 
       db.onChildMoved('sheets', callback)
 
-      // Move sheet3 to beginning, sheet2 to end
+      // Move sheet3 to beginning (position 0), then move sheet1 to end (position 2)
+      // After first move: sheet3, sheet1, sheet2
+      // After second move: sheet3, sheet2, sheet1
       await db.move('sheets', 'sheet3', 0)
-      await db.move('sheets', 'sheet2', 2)
+      await db.move('sheets', 'sheet1', 2)
 
       expect(callback).toHaveBeenCalledTimes(2)
     })
@@ -731,10 +629,10 @@ describe('onChildMoved', () => {
 // ============================================================================
 
 describe('Combined Child Event Listeners', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   it('should emit correct event types for different operations', async () => {
@@ -814,10 +712,10 @@ describe('Combined Child Event Listeners', () => {
 // ============================================================================
 
 describe('off() method', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   it('should remove all listeners for a collection when called with collection only', async () => {
@@ -878,10 +776,10 @@ describe('off() method', () => {
 // ============================================================================
 
 describe('Event Ordering', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   it('should emit events in order of operations', async () => {
@@ -920,10 +818,10 @@ describe('Event Ordering', () => {
 // ============================================================================
 
 describe('Error Handling in Child Events', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   it('should continue emitting events to other listeners if one throws', async () => {
@@ -957,10 +855,10 @@ describe('Error Handling in Child Events', () => {
 // ============================================================================
 
 describe('Memory and Performance', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   it('should not leak memory when listeners are unsubscribed', () => {
@@ -1010,10 +908,10 @@ describe('Memory and Performance', () => {
 // ============================================================================
 
 describe('Edge Cases', () => {
-  let db: DatabaseDO
+  let db: DatabaseDOInterface
 
   beforeEach(() => {
-    db = new StubDatabaseDO()
+    db = new DatabaseDO()
   })
 
   it('should handle empty collection names', async () => {

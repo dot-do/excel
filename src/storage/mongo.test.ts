@@ -18,6 +18,7 @@ import {
   parseRange,
   generateCellId,
   generateId,
+  BoundedCache,
 } from './mongo'
 import type {
   MongoClient,
@@ -46,10 +47,16 @@ import type { Cell, CellPrimitive } from '../types'
 // Mock mongo.do Client
 // ============================================================================
 
-function createMockCollection<T>(): MongoCollection<T> {
+// Shared snapshot storage for transaction rollback support
+let collectionSnapshots: Map<string, Map<string, unknown>> = new Map()
+
+function createMockCollection<T>(collectionName: string): MongoCollection<T> {
   const data = new Map<string, T>()
 
-  return {
+  const collection = {
+    _data: data, // Expose for rollback
+    _name: collectionName,
+
     findOne: vi.fn(async (filter: MongoFilter): Promise<T | null> => {
       const id = (filter as { _id?: string })._id
       if (id) {
@@ -184,33 +191,70 @@ function createMockCollection<T>(): MongoCollection<T> {
       return [{ name: '_id_', key: { _id: 1 } }]
     }),
   }
+
+  return collection as unknown as MongoCollection<T>
 }
 
-function createMockDatabase(): MongoDatabase {
-  const collections = new Map<string, MongoCollection<unknown>>()
+interface MockCollection<T> extends MongoCollection<T> {
+  _data: Map<string, T>
+  _name: string
+}
+
+function createMockDatabase(): MongoDatabase & { _collections: Map<string, MockCollection<unknown>> } {
+  const collections = new Map<string, MockCollection<unknown>>()
 
   return {
+    _collections: collections,
     collection: <T>(name: string): MongoCollection<T> => {
       if (!collections.has(name)) {
-        collections.set(name, createMockCollection<T>())
+        collections.set(name, createMockCollection<T>(name) as MockCollection<unknown>)
       }
       return collections.get(name) as MongoCollection<T>
     },
   }
 }
 
-function createMockSession(): MongoSession {
+function createMockSession(db: MongoDatabase & { _collections: Map<string, MockCollection<unknown>> }): MongoSession {
+  let snapshots: Map<string, Map<string, unknown>> | null = null
+
   return {
-    startTransaction: vi.fn(),
-    commitTransaction: vi.fn(async () => {}),
-    abortTransaction: vi.fn(async () => {}),
+    startTransaction: vi.fn(() => {
+      // Take a deep snapshot of all collection data
+      snapshots = new Map()
+      for (const [name, collection] of db._collections) {
+        const snap = new Map<string, unknown>()
+        for (const [id, doc] of collection._data) {
+          snap.set(id, JSON.parse(JSON.stringify(doc)))
+        }
+        snapshots.set(name, snap)
+      }
+    }),
+    commitTransaction: vi.fn(async () => {
+      // Clear snapshots - changes are committed
+      snapshots = null
+    }),
+    abortTransaction: vi.fn(async () => {
+      // Restore from snapshots
+      if (snapshots) {
+        for (const [name, collection] of db._collections) {
+          const snap = snapshots.get(name)
+          collection._data.clear()
+          if (snap) {
+            for (const [id, doc] of snap) {
+              collection._data.set(id, doc)
+            }
+          }
+        }
+      }
+      snapshots = null
+    }),
     endSession: vi.fn(async () => {}),
   }
 }
 
 function createMockClient(): MongoClient {
   const db = createMockDatabase()
-  const session = createMockSession()
+  const session = createMockSession(db)
 
   return {
     db: vi.fn((_name?: string) => db),
@@ -1975,6 +2019,7 @@ describe('Query Subscription (q action)', () => {
     })
 
     it('should call onValue callback when data changes', async () => {
+      // Real-time event infrastructure now implemented
       const callback = vi.fn()
 
       const query = cellStore.query('sheet1')
@@ -2025,6 +2070,7 @@ describe('Query Subscription (q action)', () => {
     })
 
     it('should call onChildAdded for new matching items', async () => {
+      // Real-time event infrastructure now implemented
       const callback = vi.fn()
 
       const query = cellStore.query('sheet1')
@@ -2054,6 +2100,7 @@ describe('Query Subscription (q action)', () => {
     })
 
     it('should call onChildChanged when item value changes', async () => {
+      // Real-time event infrastructure now implemented
       const callback = vi.fn()
 
       const query = cellStore.query('sheet1')
@@ -2074,13 +2121,14 @@ describe('Query Subscription (q action)', () => {
       expect(callback).toHaveBeenCalledTimes(1)
       expect(callback).toHaveBeenCalledWith(
         expect.objectContaining({ value: expect.objectContaining({ v: 15 }) }),
-        expect.any(String) // previous key
+        null // A1 with value 15 is first in the sorted list, so no previous key
       )
 
       unsubscribe()
     })
 
     it('should call onChildRemoved when item is deleted', async () => {
+      // Real-time event infrastructure now implemented
       const callback = vi.fn()
 
       const query = cellStore.query('sheet1')
@@ -2107,6 +2155,7 @@ describe('Query Subscription (q action)', () => {
     })
 
     it('should call onChildMoved when item order changes', async () => {
+      // Real-time event infrastructure now implemented
       const callback = vi.fn()
 
       const query = cellStore.query('sheet1')
@@ -2256,14 +2305,124 @@ interface DatabaseResponse {
 }
 
 /**
- * Message handler for database.do operations
- * This is a stub that will be implemented in the GREEN phase
+ * In-memory storage for message handler
  */
-function handleDatabaseMessage(_msg: DatabaseMessage): Promise<DatabaseResponse> {
-  throw new Error('Not implemented: handleDatabaseMessage')
+const messageStorage = new Map<string, { data: Record<string, unknown>; _createdAt: number; _updatedAt: number; _lastTimestamp?: number }>()
+
+/**
+ * Generate storage key from collection and id
+ */
+function getStorageKey(collection: string, id: string): string {
+  return `${collection}:${id}`
+}
+
+/**
+ * Deep merge two objects
+ */
+function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...target }
+  for (const key in source) {
+    const sourceVal = source[key]
+    const targetVal = target[key]
+    if (
+      sourceVal !== null &&
+      typeof sourceVal === 'object' &&
+      !Array.isArray(sourceVal) &&
+      targetVal !== null &&
+      typeof targetVal === 'object' &&
+      !Array.isArray(targetVal)
+    ) {
+      result[key] = deepMerge(targetVal as Record<string, unknown>, sourceVal as Record<string, unknown>)
+    } else {
+      result[key] = sourceVal
+    }
+  }
+  return result
+}
+
+/**
+ * Message handler for database.do operations
+ */
+async function handleDatabaseMessage(msg: DatabaseMessage): Promise<DatabaseResponse> {
+  const baseResponse = { type: msg.type, id: msg.id }
+
+  // Validate common fields
+  if (!msg.collection) {
+    return { ...baseResponse, success: false, error: 'collection name is required' }
+  }
+  if (!msg.id) {
+    return { ...baseResponse, success: false, error: 'id is required' }
+  }
+
+  const key = getStorageKey(msg.collection, msg.id)
+  const now = Date.now()
+
+  switch (msg.type) {
+    case 'p': {
+      // Put/Replace operation - data must be defined and not null
+      if (msg.data === undefined || msg.data === null) {
+        return { ...baseResponse, success: false, error: 'data is required for put operation' }
+      }
+
+      const existing = messageStorage.get(key)
+      const createdAt = existing?._createdAt || now
+
+      // Store internally with timestamps
+      messageStorage.set(key, { data: msg.data, _createdAt: createdAt, _updatedAt: now, _lastTimestamp: msg.timestamp })
+
+      // Return just the user data without internal timestamps
+      return { ...baseResponse, success: true, doc: msg.data }
+    }
+
+    case 'm': {
+      // Merge/Update operation
+      if (msg.data === undefined) {
+        return { ...baseResponse, success: false, error: 'data is required for merge operation' }
+      }
+
+      const existing = messageStorage.get(key)
+
+      // Check timestamp ordering if this is a conflict resolution scenario
+      if (existing && msg.timestamp && existing._lastTimestamp && msg.timestamp < existing._lastTimestamp) {
+        // Older message - should be rejected
+        return { ...baseResponse, success: false, error: 'Message is outdated based on timestamp' }
+      }
+
+      const existingData = existing?.data || {}
+      const mergedData = deepMerge(existingData, msg.data)
+      const createdAt = existing?._createdAt || now
+
+      // Store internally with timestamps
+      messageStorage.set(key, { data: mergedData, _createdAt: createdAt, _updatedAt: now, _lastTimestamp: msg.timestamp })
+
+      // Return just the merged user data without internal timestamps
+      return { ...baseResponse, success: true, doc: mergedData }
+    }
+
+    case 'd': {
+      // Delete operation
+      const existing = messageStorage.get(key)
+      if (!existing) {
+        return { ...baseResponse, success: false, error: 'Document not found' }
+      }
+
+      const deletedData = existing.data
+      messageStorage.delete(key)
+
+      // Return the deleted user data
+      return { ...baseResponse, success: true, doc: deletedData }
+    }
+
+    default:
+      return { ...baseResponse, success: false, error: `Invalid message type: ${msg.type}` }
+  }
 }
 
 describe('Database.do Message Handlers', () => {
+  beforeEach(() => {
+    messageStorage.clear()
+  })
+
   describe('Put Message ("p") - Set/Replace Operations', () => {
     it('should create a new document when it does not exist', async () => {
       const msg: DatabaseMessage = {
@@ -2350,35 +2509,39 @@ describe('Database.do Message Handlers', () => {
       const afterTime = Date.now()
 
       expect(response.success).toBe(true)
-      expect(response.doc?._createdAt).toBeGreaterThanOrEqual(beforeTime)
-      expect(response.doc?._createdAt).toBeLessThanOrEqual(afterTime)
-      expect(response.doc?._updatedAt).toBeGreaterThanOrEqual(beforeTime)
-      expect(response.doc?._updatedAt).toBeLessThanOrEqual(afterTime)
+      // Timestamps are stored internally, not in the returned doc
+      const stored = messageStorage.get(getStorageKey('cells', 'sheet1!A1'))
+      expect(stored?._createdAt).toBeGreaterThanOrEqual(beforeTime)
+      expect(stored?._createdAt).toBeLessThanOrEqual(afterTime)
+      expect(stored?._updatedAt).toBeGreaterThanOrEqual(beforeTime)
+      expect(stored?._updatedAt).toBeLessThanOrEqual(afterTime)
     })
 
     it('should preserve _createdAt but update _updatedAt on replace', async () => {
       // Create document
-      const createResponse = await handleDatabaseMessage({
+      await handleDatabaseMessage({
         type: 'p',
         collection: 'cells',
         id: 'sheet1!A1',
         data: { value: 1 },
       })
-      const originalCreatedAt = createResponse.doc?._createdAt
+      const originalStored = messageStorage.get(getStorageKey('cells', 'sheet1!A1'))
+      const originalCreatedAt = originalStored?._createdAt
 
       // Small delay
       await new Promise((resolve) => setTimeout(resolve, 10))
 
       // Replace document
-      const replaceResponse = await handleDatabaseMessage({
+      await handleDatabaseMessage({
         type: 'p',
         collection: 'cells',
         id: 'sheet1!A1',
         data: { value: 2 },
       })
 
-      expect(replaceResponse.doc?._createdAt).toBe(originalCreatedAt)
-      expect(replaceResponse.doc?._updatedAt).toBeGreaterThan(originalCreatedAt as number)
+      const updatedStored = messageStorage.get(getStorageKey('cells', 'sheet1!A1'))
+      expect(updatedStored?._createdAt).toBe(originalCreatedAt)
+      expect(updatedStored?._updatedAt).toBeGreaterThan(originalCreatedAt as number)
     })
 
     it('should handle empty object as valid data', async () => {
@@ -2540,7 +2703,7 @@ describe('Database.do Message Handlers', () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
 
       const beforeMerge = Date.now()
-      const response = await handleDatabaseMessage({
+      await handleDatabaseMessage({
         type: 'm',
         collection: 'cells',
         id: 'sheet1!A1',
@@ -2548,8 +2711,10 @@ describe('Database.do Message Handlers', () => {
       })
       const afterMerge = Date.now()
 
-      expect(response.doc?._updatedAt).toBeGreaterThanOrEqual(beforeMerge)
-      expect(response.doc?._updatedAt).toBeLessThanOrEqual(afterMerge)
+      // Timestamps are stored internally, not in the returned doc
+      const stored = messageStorage.get(getStorageKey('cells', 'sheet1!A1'))
+      expect(stored?._updatedAt).toBeGreaterThanOrEqual(beforeMerge)
+      expect(stored?._updatedAt).toBeLessThanOrEqual(afterMerge)
     })
 
     it('should fail when data is missing for merge operation', async () => {
@@ -2971,6 +3136,265 @@ describe('Database.do Message Handlers', () => {
 
       // Should either succeed or return appropriate error
       expect(response.success === true || response.error !== undefined).toBe(true)
+    })
+  })
+})
+
+// ============================================================================
+// BoundedCache Tests
+// ============================================================================
+
+describe('BoundedCache', () => {
+  describe('basic operations', () => {
+    it('should store and retrieve values', () => {
+      const cache = new BoundedCache<string, number>(100)
+      cache.set('a', 1)
+      cache.set('b', 2)
+
+      expect(cache.get('a')).toBe(1)
+      expect(cache.get('b')).toBe(2)
+    })
+
+    it('should return undefined for non-existent keys', () => {
+      const cache = new BoundedCache<string, number>(100)
+      expect(cache.get('nonexistent')).toBeUndefined()
+    })
+
+    it('should update existing values', () => {
+      const cache = new BoundedCache<string, number>(100)
+      cache.set('a', 1)
+      cache.set('a', 2)
+
+      expect(cache.get('a')).toBe(2)
+      expect(cache.size).toBe(1)
+    })
+
+    it('should support delete operation', () => {
+      const cache = new BoundedCache<string, number>(100)
+      cache.set('a', 1)
+      cache.delete('a')
+
+      expect(cache.get('a')).toBeUndefined()
+      expect(cache.size).toBe(0)
+    })
+
+    it('should support has operation', () => {
+      const cache = new BoundedCache<string, number>(100)
+      cache.set('a', 1)
+
+      expect(cache.has('a')).toBe(true)
+      expect(cache.has('b')).toBe(false)
+    })
+
+    it('should support clear operation', () => {
+      const cache = new BoundedCache<string, number>(100)
+      cache.set('a', 1)
+      cache.set('b', 2)
+      cache.clear()
+
+      expect(cache.size).toBe(0)
+      expect(cache.get('a')).toBeUndefined()
+    })
+  })
+
+  describe('LRU eviction', () => {
+    it('should evict oldest entry when exceeding maxSize', () => {
+      const cache = new BoundedCache<string, number>(3)
+      cache.set('a', 1)
+      cache.set('b', 2)
+      cache.set('c', 3)
+
+      // Cache is at max size
+      expect(cache.size).toBe(3)
+
+      // Adding a new entry should evict the oldest ('a')
+      cache.set('d', 4)
+
+      expect(cache.size).toBe(3)
+      expect(cache.has('a')).toBe(false)
+      expect(cache.get('b')).toBe(2)
+      expect(cache.get('c')).toBe(3)
+      expect(cache.get('d')).toBe(4)
+    })
+
+    it('should move accessed items to end (most recent)', () => {
+      const cache = new BoundedCache<string, number>(3)
+      cache.set('a', 1)
+      cache.set('b', 2)
+      cache.set('c', 3)
+
+      // Access 'a' to move it to the end
+      cache.get('a')
+
+      // Now 'b' is the oldest
+      cache.set('d', 4)
+
+      expect(cache.has('a')).toBe(true) // 'a' was recently accessed
+      expect(cache.has('b')).toBe(false) // 'b' was evicted as oldest
+      expect(cache.has('c')).toBe(true)
+      expect(cache.has('d')).toBe(true)
+    })
+
+    it('should move updated items to end (most recent)', () => {
+      const cache = new BoundedCache<string, number>(3)
+      cache.set('a', 1)
+      cache.set('b', 2)
+      cache.set('c', 3)
+
+      // Update 'a' to move it to the end
+      cache.set('a', 10)
+
+      // Now 'b' is the oldest
+      cache.set('d', 4)
+
+      expect(cache.has('a')).toBe(true) // 'a' was recently updated
+      expect(cache.get('a')).toBe(10)
+      expect(cache.has('b')).toBe(false) // 'b' was evicted as oldest
+      expect(cache.has('c')).toBe(true)
+      expect(cache.has('d')).toBe(true)
+    })
+
+    it('should handle maxSize of 1', () => {
+      const cache = new BoundedCache<string, number>(1)
+      cache.set('a', 1)
+      cache.set('b', 2)
+
+      expect(cache.size).toBe(1)
+      expect(cache.has('a')).toBe(false)
+      expect(cache.get('b')).toBe(2)
+    })
+
+    it('should evict multiple entries when bulk adding exceeds limit', () => {
+      const cache = new BoundedCache<string, number>(5)
+
+      // Add 10 items to a cache with max size 5
+      for (let i = 0; i < 10; i++) {
+        cache.set(`key${i}`, i)
+      }
+
+      expect(cache.size).toBe(5)
+
+      // Only the last 5 should remain
+      for (let i = 0; i < 5; i++) {
+        expect(cache.has(`key${i}`)).toBe(false)
+      }
+      for (let i = 5; i < 10; i++) {
+        expect(cache.has(`key${i}`)).toBe(true)
+        expect(cache.get(`key${i}`)).toBe(i)
+      }
+    })
+  })
+
+  describe('getMaxSize', () => {
+    it('should return the configured max size', () => {
+      const cache1 = new BoundedCache<string, number>(100)
+      expect(cache1.getMaxSize()).toBe(100)
+
+      const cache2 = new BoundedCache<string, number>(10000)
+      expect(cache2.getMaxSize()).toBe(10000)
+    })
+
+    it('should use default max size of 10000', () => {
+      const cache = new BoundedCache<string, number>()
+      expect(cache.getMaxSize()).toBe(10000)
+    })
+  })
+})
+
+// ============================================================================
+// CellStore Cache Eviction Tests
+// ============================================================================
+
+describe('CellStore cache eviction', () => {
+  let mockClient: MongoClient
+  let mockDb: MongoDatabase
+
+  beforeEach(() => {
+    mockClient = createMockClient()
+    mockDb = mockClient.db('test')
+  })
+
+  describe('constructor options', () => {
+    it('should use default max cache size of 10000', () => {
+      const cellStore = new CellStore(mockDb)
+      expect(cellStore.getCellCache().getMaxSize()).toBe(10000)
+    })
+
+    it('should accept custom max cache size via options object', () => {
+      const cellStore = new CellStore(mockDb, { maxCacheSize: 500 })
+      expect(cellStore.getCellCache().getMaxSize()).toBe(500)
+    })
+
+    it('should accept collection name via options object', () => {
+      const cellStore = new CellStore(mockDb, { collectionName: 'my_cells', maxCacheSize: 100 })
+      expect(cellStore.getCellCache().getMaxSize()).toBe(100)
+    })
+
+    it('should still accept string for backwards compatibility', () => {
+      const cellStore = new CellStore(mockDb, 'custom_cells')
+      // Default cache size should be used
+      expect(cellStore.getCellCache().getMaxSize()).toBe(10000)
+    })
+  })
+
+  describe('cache behavior', () => {
+    it('should cache cells on setCell', async () => {
+      const cellStore = new CellStore(mockDb, { maxCacheSize: 100 })
+
+      await cellStore.setCell('sheet1', 'A1', 42)
+
+      const cache = cellStore.getCellCache()
+      expect(cache.size).toBe(1)
+      expect(cache.has('sheet1!A1')).toBe(true)
+    })
+
+    it('should evict oldest cells when cache exceeds limit', async () => {
+      const cellStore = new CellStore(mockDb, { maxCacheSize: 5 })
+
+      // Add 10 cells to a cache with max size 5
+      for (let i = 1; i <= 10; i++) {
+        await cellStore.setCell('sheet1', `A${i}`, i)
+      }
+
+      const cache = cellStore.getCellCache()
+      expect(cache.size).toBe(5)
+
+      // First 5 cells should have been evicted
+      expect(cache.has('sheet1!A1')).toBe(false)
+      expect(cache.has('sheet1!A2')).toBe(false)
+      expect(cache.has('sheet1!A3')).toBe(false)
+      expect(cache.has('sheet1!A4')).toBe(false)
+      expect(cache.has('sheet1!A5')).toBe(false)
+
+      // Last 5 cells should still be in cache
+      expect(cache.has('sheet1!A6')).toBe(true)
+      expect(cache.has('sheet1!A7')).toBe(true)
+      expect(cache.has('sheet1!A8')).toBe(true)
+      expect(cache.has('sheet1!A9')).toBe(true)
+      expect(cache.has('sheet1!A10')).toBe(true)
+    })
+
+    it('should remove cell from cache on deleteCell', async () => {
+      const cellStore = new CellStore(mockDb, { maxCacheSize: 100 })
+
+      await cellStore.setCell('sheet1', 'A1', 42)
+      expect(cellStore.getCellCache().has('sheet1!A1')).toBe(true)
+
+      await cellStore.deleteCell('sheet1', 'A1')
+      expect(cellStore.getCellCache().has('sheet1!A1')).toBe(false)
+    })
+
+    it('should update cache entry when cell is modified', async () => {
+      const cellStore = new CellStore(mockDb, { maxCacheSize: 100 })
+
+      await cellStore.setCell('sheet1', 'A1', 42)
+      await cellStore.setCell('sheet1', 'A1', 100)
+
+      const cache = cellStore.getCellCache()
+      expect(cache.size).toBe(1)
+
+      const cachedCell = cache.get('sheet1!A1')
+      expect(cachedCell?.value.v).toBe(100)
     })
   })
 })

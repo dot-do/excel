@@ -369,14 +369,14 @@ export const CELL_INDEXES: Array<{ spec: IndexSpec; options?: IndexOptions }> = 
   // Compound index for sheet + cell lookup
   { spec: { sheet: 1, col: 1, row: 1 }, options: { unique: true } },
   // Index for range queries
-  { spec: { sheet: 1, colIndex: 1, row: 1 } },
+  { spec: { sheet: 1, colIndex: 1, row: 1 }, options: {} },
   // Index for formula cells
   { spec: { sheet: 1, 'value.f': 1 }, options: { sparse: true } },
   // Index for dependencies tracking
   { spec: { dependencies: 1 }, options: { sparse: true } },
   { spec: { dependents: 1 }, options: { sparse: true } },
   // Index for recent updates
-  { spec: { updatedAt: -1 } },
+  { spec: { updatedAt: -1 }, options: {} },
 ]
 
 /** Predefined indexes for sheets collection */

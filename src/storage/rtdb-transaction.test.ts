@@ -18,6 +18,7 @@ import {
   WorkbookStore,
   StorageManager,
   TransactionError,
+  ConflictError,
   generateId,
 } from './mongo'
 import type {
@@ -71,21 +72,7 @@ interface RTDBTransactionContext {
   timestamp(): number
 }
 
-/**
- * Conflict error thrown when optimistic lock fails
- */
-class ConflictError extends Error {
-  constructor(
-    message: string,
-    public readonly collection: string,
-    public readonly id: string,
-    public readonly expectedVersion: number,
-    public readonly actualVersion: number
-  ) {
-    super(message)
-    this.name = 'ConflictError'
-  }
-}
+// ConflictError is now imported from ./mongo
 
 /**
  * Extended storage manager with RTDB transaction support

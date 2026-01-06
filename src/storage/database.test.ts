@@ -56,12 +56,16 @@ function createMockDatabaseClient(): DatabaseClient {
 
     list: vi.fn(async (prefix: string, options?: { recursive?: boolean; limit?: number }): Promise<PathDocument[]> => {
       const results: PathDocument[] = []
+      const prefixWithSlash = prefix.endsWith('/') ? prefix : prefix + '/'
+
       for (const [key, doc] of storage.entries()) {
-        if (key.startsWith(prefix)) {
+        // Only include children under the prefix, not the prefix itself
+        if (key.startsWith(prefixWithSlash)) {
           if (!options?.recursive) {
             // Only include direct children
-            const relative = key.slice(prefix.length)
-            if (relative.includes('/') && relative.indexOf('/') !== relative.length - 1) {
+            const relative = key.slice(prefixWithSlash.length)
+            // Skip if there's a slash in the remaining path (nested child)
+            if (relative.includes('/')) {
               continue
             }
           }

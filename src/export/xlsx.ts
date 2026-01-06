@@ -413,7 +413,7 @@ export function toWorkbook(workbookData: WorkbookData, options?: ExportOptions):
     const activeIndex = wb.SheetNames.indexOf(workbookData.activeSheet)
     if (activeIndex >= 0) {
       wb.Workbook = {
-        Sheets: wb.SheetNames.map((_, i) => ({
+        Sheets: wb.SheetNames.map(() => ({
           Hidden: 0,
         })),
       }

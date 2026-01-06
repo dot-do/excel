@@ -145,6 +145,8 @@ export interface CellMetadata {
     errorMessage?: string
     errorTitle?: string
   }
+  /** Array formula range (for spilled formulas) */
+  arrayFormulaRange?: string
 }
 
 /** Complete cell object stored in mongo.do */
