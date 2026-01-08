@@ -1,668 +1,464 @@
 # excel.do
 
-**Spreadsheets at the Edge** - A mongo.do + gitx.do powered spreadsheet engine for Cloudflare Workers.
+> Spreadsheets at the Edge. Talk to Your Data. AI-First.
 
-excel.do is a modern spreadsheet engine designed to run at the edge, providing full Excel compatibility with support for formulas, formatting, import/export, and collaborative features powered by mongo.do and gitx.do.
+Microsoft charges $12.50/user/month for Excel. Google locks you into Sheets. Both require you to click through menus, remember functions, and manually format cells. Spreadsheets should be as simple as describing what you want.
+
+**excel.do** is the AI-native spreadsheet engine. Edge-first. Natural language. Zero configuration.
+
+## AI-Native API
+
+```typescript
+import { excel } from 'excel.do'           // Full SDK
+import { excel } from 'excel.do/tiny'      // Minimal client
+import { excel } from 'excel.do/formulas'  // Formula-only operations
+```
+
+Natural language for spreadsheet workflows:
+
+```typescript
+import { excel } from 'excel.do'
+
+// Talk to it like a colleague
+const report = await excel`quarterly sales by region`
+const summary = await excel`top 10 customers by revenue`
+const forecast = await excel`project next quarter based on trends`
+
+// Chain like sentences
+await excel`load sales_data.xlsx`
+  .map(sheet => excel`pivot by product category`)
+  .map(pivot => excel`add percentage of total column`)
+  .map(report => excel`export as PDF with charts`)
+
+// Formatting that describes itself
+await excel`format ${data} as financial report`
+  .bold(`headers`)
+  .currency(`revenue columns`)
+  .highlight(`values over 1M in green`)
+```
+
+## The Problem
+
+Spreadsheet software is stuck in the 1990s:
+
+| What They Charge | The Reality |
+|------------------|-------------|
+| **Excel 365** | $12.50/user/month, desktop-first |
+| **Google Sheets** | Free-ish, but your data is the product |
+| **Airtable** | $20/seat/month for basic features |
+| **Formula Learning Curve** | Hours memorizing VLOOKUP, INDEX/MATCH, SUMIFS |
+| **Collaboration** | Merge conflicts, version chaos |
+| **Integration** | Export/import cycles, broken links |
+
+### The Complexity Tax
+
+- **200+ Excel functions** to memorize
+- **Nested formulas** that become unreadable
+- **Manual formatting** click by click
+- **No version control** - "Final_v2_REAL_final.xlsx"
+- **No API access** without expensive add-ons
+
+### The Data Trap
+
+- Files scattered across drives and emails
+- No real-time collaboration without cloud lock-in
+- Formulas break when data moves
+- Charts disconnect from sources
+
+## The Solution
+
+**excel.do** reimagines spreadsheets for the AI era:
+
+```
+Legacy Spreadsheets              excel.do
+-----------------------------------------------------------------
+Memorize 200+ functions          Just describe what you want
+Click through format menus       Natural language styling
+Manual pivot table creation      AI generates pivots
+Export/import cycles             API-first, real-time
+Desktop or cloud lock-in         Edge-native, runs anywhere
+No version control               Git-native via gitx.do
+$12.50/user/month                Deploy your own
+```
+
+## One-Click Deploy
+
+```bash
+npx create-dotdo excel
+```
+
+A full spreadsheet engine. Running on infrastructure you control. AI-native from day one.
+
+```typescript
+import { Excel } from 'excel.do'
+
+export default Excel({
+  name: 'company-sheets',
+  domain: 'sheets.mycompany.com',
+  storage: {
+    hot: 'sqlite',      // Fast access
+    warm: 'r2',         // Archive
+  },
+})
+```
 
 ## Features
 
-- **Edge-Native**: Built for Cloudflare Workers with zero cold starts
-- **Excel Compatible**: Full XLSX import/export via SheetJS
-- **Formula Engine**: Parse and evaluate Excel formulas with AST-based parsing
-- **Cell Management**: Complete cell data model with formatting, validation, and metadata
-- **Address Handling**: Support for A1 and R1C1 notation, ranges, and cross-sheet references
-- **Storage Backends**: Multiple storage options including mongo.do and custom database implementations
-- **Real-Time Collaboration**: WebSocket support for live updates powered by gitx.do
-- **Type-Safe**: Full TypeScript support with comprehensive type definitions
-
-## Installation
-
-### npm
-
-```bash
-npm install excel.do
-```
-
-### With peer dependencies
-
-If you want to use storage features with mongo.do or gitx.do:
-
-```bash
-npm install excel.do mongo.do gitx.do
-```
-
-## Quick Start
-
-### Basic Usage
+### Loading Data
 
 ```typescript
-import { createCell, createCellValue, colToIndex } from 'excel.do'
+// Load anything
+const data = await excel`sales_data.xlsx`
+const csv = await excel`customers.csv`
+const api = await excel`fetch from CRM API`
 
-// Create a cell with a value
-const cell = createCell({
-  sheet: 'Sheet1',
-  row: 1,
-  col: 'A',
-  value: 'Hello, World!',
-})
-
-console.log(cell)
-// {
-//   _id: 'Sheet1!A1',
-//   sheet: 'Sheet1',
-//   row: 1,
-//   col: 'A',
-//   colIndex: 0,
-//   value: { v: 'Hello, World!', t: 'string' },
-//   createdAt: Date,
-//   updatedAt: Date
-// }
+// AI infers structure
+await excel`sales_data.xlsx`           // returns workbook
+await excel`sales_data.xlsx Sheet2`    // specific sheet
+await excel`first 100 rows of sales`   // filtered
 ```
 
-### Working with Cell Addresses
+### Querying Data
 
 ```typescript
-import { parseA1, colToIndex, indexToCol, toA1 } from 'excel.do/cell'
+// Natural queries
+const results = await excel`orders over $10,000`
+const monthly = await excel`group by month, sum revenue`
+const top = await excel`top 5 products by units sold`
 
-// Parse A1-style references
-const ref = parseA1('Sheet1!$A$1')
-// { original: 'Sheet1!$A$1', col: 'A', colIndex: 0, row: 1, sheet: 'Sheet1', absolute: { col: true, row: true } }
-
-// Convert column letters to indices and back
-const index = colToIndex('A')     // 0
-const col = indexToCol(0)          // 'A'
-const col2 = indexToCol(26)        // 'AA'
-
-// Generate A1 notation
-const a1 = toA1({ row: 5, col: 3 })
-// 'C5'
-
-const a1Abs = toA1({ row: 5, col: 3 }, { absolute: { col: true, row: true } })
-// '$C$5'
+// AI understands context
+await excel`show me Q4`                 // knows it's dates
+await excel`find duplicates`            // identifies matching rows
+await excel`rows with missing data`     // spots nulls
 ```
 
-### Range Operations
+### Formulas
 
 ```typescript
-import { parseRange, expandRange, rangeContains, rangeIntersects } from 'excel.do/cell'
+// AI writes the formula
+await excel`sum column A`
+await excel`average of sales where region is West`
+await excel`running total of revenue by date`
 
-// Parse ranges
-const range = parseRange('A1:C10')
-// {
-//   original: 'A1:C10',
-//   start: { col: 'A', colIndex: 0, row: 1, ... },
-//   end: { col: 'C', colIndex: 2, row: 10, ... }
-// }
-
-// Expand range to individual cells
-const cells = expandRange('A1:B2')
-// ['A1', 'A2', 'B1', 'B2']
-
-// Check if cell is in range
-rangeContains('A1:C10', 'B5')  // true
-rangeContains('A1:C10', 'D5')  // false
-
-// Check range intersection
-rangeIntersects('A1:C10', 'B5:D15')  // true
-rangeIntersects('A1:C10', 'E1:F10')  // false
+// Or describe complex logic
+await excel`commission: 5% up to 100k, 7% from 100k to 500k, 10% above`
 ```
 
-### Cell Values and Types
+### Pivots and Aggregation
 
 ```typescript
-import { createCellValue, inferValueType, formatCellValue } from 'excel.do/cell'
+// Pivots in plain English
+await excel`pivot sales by region and quarter`
+await excel`breakdown by category with subtotals`
+await excel`cross-tab product vs channel`
 
-// Create typed cell values
-const numValue = createCellValue(42)
-// { v: 42, t: 'number' }
-
-const dateValue = createCellValue(new Date('2024-01-15'))
-// { v: Date('2024-01-15'), t: 'date' }
-
-const formulaValue = createCellValue(100, '=A1*2')
-// { v: 100, t: 'number', f: '=A1*2' }
-
-const errorValue = createCellValue('#DIV/0!')
-// { v: '#DIV/0!', t: 'error', e: '#DIV/0!' }
-
-// Infer value types
-inferValueType(42)      // 'number'
-inferValueType(true)    // 'boolean'
-inferValueType(new Date()) // 'date'
-inferValueType('#N/A')  // 'error'
-
-// Format values for display
-formatCellValue({ v: 42, t: 'number' }, '0%')
-// '4200%'
-
-formatCellValue({ v: 42.50, t: 'number' }, '$#,##0.00')
-// '$42.50'
-
-formatCellValue({ v: new Date('2024-01-15'), t: 'date' }, 'yyyy-mm-dd')
-// '2024-01-15'
+// Aggregations just work
+await excel`total, average, and count by department`
 ```
 
-### Formula Parsing
+### Formatting
 
 ```typescript
-import { parseFormula } from 'excel.do/formula'
+// Describe the style
+await excel`format as financial report`
+await excel`bold headers, alternate row colors`
+await excel`highlight negative values in red`
 
-// Parse Excel formulas into AST
-const result = parseFormula('=SUM(A1:A10) + B1 * 2')
-// {
-//   ast: {
-//     type: 'Program',
-//     body: {
-//       type: 'BinaryExpression',
-//       operator: '+',
-//       left: {
-//         type: 'FunctionCall',
-//         name: 'SUM',
-//         arguments: [{ type: 'RangeReference', ... }]
-//       },
-//       right: { type: 'BinaryExpression', ... }
-//     }
-//   },
-//   errors: [],
-//   formula: '=SUM(A1:A10) + B1 * 2'
-// }
-
-// Check for parse errors
-if (result.errors.length > 0) {
-  console.error('Formula parse errors:', result.errors)
-}
+// Conditional formatting
+await excel`green if above target, red if below`
+await excel`data bars for percentages`
+await excel`color scale from white to blue by value`
 ```
 
-### Cell Formatting
+### Charts
 
 ```typescript
-import { createCell, mergeCellFormat } from 'excel.do/cell'
+// Charts from description
+await excel`bar chart of sales by region`
+await excel`line chart showing monthly trends`
+await excel`pie chart of market share`
 
-// Create a cell with formatting
-const cell = createCell({
-  sheet: 'Sheet1',
-  row: 1,
-  col: 'A',
-  value: 42.50,
-  format: {
-    font: {
-      bold: true,
-      size: 12,
-      color: '#FF0000',
-    },
-    fill: {
-      type: 'solid',
-      color: '#FFFF00',
-    },
-    alignment: {
-      horizontal: 'center',
-      vertical: 'middle',
-    },
-    numberFormat: '$#,##0.00',
-  },
-})
-
-// Merge format definitions
-const base = { font: { bold: true, size: 12 } }
-const override = { font: { color: '#FF0000' } }
-const merged = mergeCellFormat(base, override)
-// { font: { bold: true, size: 12, color: '#FF0000' } }
+// Compound visualizations
+await excel`dashboard with revenue trends and top products`
 ```
 
-### Cell Cloning and Manipulation
+### Export
 
 ```typescript
-import { cloneCell, validateCell, isEmptyCell } from 'excel.do/cell'
+// Export naturally
+await excel`save as quarterly_report.xlsx`
+await excel`export to PDF`
+await excel`send to Google Sheets`
 
-const original = createCell({
-  sheet: 'Sheet1',
-  row: 1,
-  col: 'A',
-  value: 'Test',
-})
-
-// Clone a cell to a new location
-const cloned = cloneCell(original, { row: 5, col: 'C' })
-// Creates a new cell at Sheet1!C5 with same value but updated timestamps
-
-// Validate cell data
-const validation = validateCell(cell)
-// { valid: true, errors: [] }
-
-// Check if cell is empty
-isEmptyCell(cell)  // false
+// Formatted exports
+await excel`export as PDF with company letterhead`
+await excel`CSV with European number format`
 ```
 
-### Import/Export XLSX
+## Real-Time Collaboration
 
 ```typescript
-import { parseWorkbook, parseSheet, rowsFromSheet } from 'excel.do/import'
-import { toXLSX, toCSV, toWorkbook, toSheet, cellToSheetJS } from 'excel.do/export'
+// Live editing powered by gitx.do
+await excel`open sales_forecast.xlsx`
+  .share(`sales-team@company.com`)
+  .track()   // version history automatic
 
-// Import and parse XLSX file
-const buffer = await fs.readFile('data.xlsx')
-const workbook = parseWorkbook(buffer)
+// Merge like git
+await excel`merge Sarah's changes with mine`
 
-// Export to XLSX file
-const output = await toXLSX({
-  sheets: workbook.sheets.map(sheet => ({
-    name: sheet.name,
-    cells: sheet.cells
-  }))
-})
-await fs.writeFile('output.xlsx', output)
-
-// Export sheet to CSV
-const csv = toCSV({
-  name: 'Sheet1',
-  cells: workbook.sheets[0].cells
-})
-await fs.writeFile('output.csv', csv)
-
-// Extract rows as documents
-const rows = rowsFromSheet(worksheet, { headers: true })
+// Conflict resolution
+await excel`accept their revenue numbers, keep my formulas`
 ```
 
-## API Reference
+## Promise Pipelining
 
-### Cell Module (`excel.do/cell`)
-
-#### Functions
-
-- **`createCell(options: CreateCellOptions): Cell`**
-  - Create a new cell with values, formatting, and metadata
-  - Options: `sheet`, `row`, `col`, `value`, `formula`, `format`, `metadata`
-
-- **`createCellValue(value: CellPrimitive, formula?: string): CellValue`**
-  - Create a typed cell value from a primitive
-  - Automatically infers type (string, number, boolean, date, error, empty)
-
-- **`inferValueType(value: unknown): CellValueType`**
-  - Determine the type of a cell value
-  - Returns: 'boolean' | 'number' | 'string' | 'date' | 'error' | 'empty'
-
-- **`getCellId(sheet: string, col: string, row: number): string`**
-  - Generate a cell ID in format "Sheet!A1"
-  - Handles special characters in sheet names
-
-- **`cloneCell(cell: Cell, overrides?: Partial<CreateCellOptions>): Cell`**
-  - Create a deep copy of a cell with optional position/value overrides
-
-- **`validateCell(cell: Cell): ValidationResult`**
-  - Validate cell data structure
-  - Returns: `{ valid: boolean, errors: string[] }`
-
-- **`isEmptyCell(cell: Cell): boolean`**
-  - Check if a cell is empty (null, empty string, or no formula)
-
-- **`formatCellValue(value: CellValue, numberFormat?: string): string`**
-  - Format a cell value as a string for display
-  - Supports formats: `0%`, `$#,##0.00`, `yyyy-mm-dd`
-
-- **`mergeCellFormat(base?: CellFormat, override?: CellFormat): CellFormat`**
-  - Deep merge two cell format objects
-
-#### Address Functions
-
-- **`colToIndex(col: string): number`**
-  - Convert column letters to 0-based index
-  - Example: 'A' → 0, 'Z' → 25, 'AA' → 26
-
-- **`indexToCol(index: number): string`**
-  - Convert 0-based index to column letters
-  - Example: 0 → 'A', 25 → 'Z', 26 → 'AA'
-
-- **`parseA1(ref: string): CellReference`**
-  - Parse A1-style reference (e.g., 'Sheet1!$A$1')
-  - Returns: `{ col, colIndex, row, sheet?, absolute: { col, row } }`
-
-- **`parseR1C1(ref: string): R1C1Reference`**
-  - Parse R1C1-style reference (e.g., 'R1C1', 'R[1]C[-1]')
-
-- **`parseRange(ref: string): RangeReference`**
-  - Parse range reference (e.g., 'A1:C10', 'Sheet1!A:A')
-  - Returns: `{ original, start, end, sheet? }`
-
-- **`parseReference(ref: string): ParsedReference`**
-  - Auto-detect and parse any reference type
-  - Returns: `{ type: 'cell' | 'range' | 'r1c1' | 'error', ref? }`
-
-- **`isValidA1(ref: string): boolean`**
-  - Check if string is a valid A1 reference
-
-- **`isValidR1C1(ref: string): boolean`**
-  - Check if string is a valid R1C1 reference
-
-- **`toA1(pos: { row, col }, options?): string`**
-  - Convert row/col to A1 notation
-  - Options: `absolute: { row?, col? }`, `sheet?`
-
-- **`toR1C1(a1: string, options?): string`**
-  - Convert A1 notation to R1C1
-
-- **`offsetReference(ref: CellReference, offset: { rowOffset?, colOffset? }): CellReference`**
-  - Offset a cell reference by row/column deltas
-
-- **`expandRange(rangeStr: string): string[]`**
-  - Expand range to array of individual cell references
-  - Example: 'A1:B2' → ['A1', 'A2', 'B1', 'B2']
-
-- **`rangeContains(rangeStr: string, cellStr: string): boolean`**
-  - Check if a cell is within a range
-
-- **`rangeIntersects(range1Str: string, range2Str: string): boolean`**
-  - Check if two ranges overlap
-
-- **`mergeRanges(ranges: string[]): string[]`**
-  - Merge overlapping or adjacent ranges
-
-### Types
-
-#### Cell Value Types
+Chain operations without waiting:
 
 ```typescript
-type CellValueType = 'boolean' | 'number' | 'string' | 'date' | 'error' | 'empty'
+// One network round trip for the entire chain
+await excel`quarterly_data.xlsx`
+  .map(data => excel`filter to current year`)
+  .map(filtered => excel`pivot by product line`)
+  .map(pivot => excel`add year-over-year growth`)
+  .map(analysis => excel`format as executive summary`)
+  .map(report => excel`export as PDF`)
 
-interface CellValue {
-  v: CellPrimitive           // Raw value
-  t: CellValueType          // Type
-  w?: string                // Formatted display text
-  f?: string                // Formula
-  e?: CellErrorValue        // Error value
-}
+// Parallel processing
+const [sales, costs, inventory] = await Promise.all([
+  excel`sum revenue by region`,
+  excel`sum expenses by category`,
+  excel`inventory levels by warehouse`,
+])
+
+await excel`combine ${sales}, ${costs}, ${inventory} into P&L`
 ```
 
-#### Cell Object
+## AI-Native Features
+
+### Smart Suggestions
 
 ```typescript
-interface Cell {
-  _id: string                    // Unique ID (e.g., "Sheet1!A1")
-  sheet: string                  // Sheet name
-  row: number                    // Row number (1-indexed)
-  col: string                    // Column letters
-  colIndex: number               // Column index (0-indexed)
-  value: CellValue              // Cell value
-  format?: CellFormat           // Formatting
-  metadata?: CellMetadata       // Comments, validation, hyperlinks
-  dependencies?: string[]       // Cells this depends on
-  dependents?: string[]         // Cells that depend on this
-  updatedAt: Date               // Last modified
-  createdAt: Date               // Created timestamp
-}
+// AI analyzes your data and suggests
+await excel`analyze this dataset`
+// Returns: insights, recommended charts, potential issues
+
+await excel`what formulas would help here?`
+// Returns: relevant formulas for your data patterns
 ```
 
-#### Cell Format
+### Natural Transformations
 
 ```typescript
-interface CellFormat {
-  font?: {
-    name?: string
-    size?: number
-    bold?: boolean
-    italic?: boolean
-    underline?: boolean | 'single' | 'double'
-    strikethrough?: boolean
-    color?: Color
-  }
-  fill?: {
-    type: 'solid' | 'pattern' | 'gradient'
-    color?: Color
-    patternType?: string
-    fgColor?: Color
-    bgColor?: Color
-  }
-  border?: {
-    top?: Border
-    right?: Border
-    bottom?: Border
-    left?: Border
-  }
-  alignment?: {
-    horizontal?: 'left' | 'center' | 'right'
-    vertical?: 'top' | 'center' | 'bottom'
-    wrapText?: boolean
-    shrinkToFit?: boolean
-    textRotation?: number
-    indent?: number
-  }
-  numberFormat?: string
-  protection?: {
-    locked?: boolean
-    hidden?: boolean
-  }
-}
+// Describe the transformation
+await excel`split full name into first and last`
+await excel`convert dates to fiscal quarters`
+await excel`normalize phone numbers`
+await excel`extract domains from emails`
 ```
 
-#### Address Types
+### Anomaly Detection
 
 ```typescript
-interface CellReference {
-  original: string
-  col: string
-  colIndex: number
-  row: number
-  sheet?: string
-  absolute: {
-    col: boolean      // $ before column
-    row: boolean      // $ before row
-  }
-}
-
-interface RangeReference {
-  original: string
-  start: CellReference
-  end: CellReference
-  sheet?: string
-}
-
-interface R1C1Reference {
-  original: string
-  sheet?: string
-  row: { value: number; relative: boolean }
-  col: { value: number; relative: boolean }
-}
+// AI spots problems
+await excel`find outliers in revenue`
+await excel`flag suspicious transactions`
+await excel`data quality issues`
 ```
 
-### Import Module (`excel.do/import`)
-
-#### Functions
-
-- **`parseWorkbook(data: Buffer | Uint8Array | ArrayBuffer, options?: ImportOptions): ParsedWorkbook`**
-  - Parse an XLSX buffer into workbook structure
-  - Returns: `{ name, sheets: ParsedSheet[], metadata? }`
-
-- **`parseSheet(worksheet: XLSX.WorkSheet, name: string, options?: ImportOptions): ParsedSheet`**
-  - Parse a SheetJS worksheet into sheet structure
-  - Returns: `{ name, cells: ImportedCell[], dimensions?, merges?, columnWidths?, rowHeights? }`
-
-- **`rowsFromSheet(worksheet: XLSX.WorkSheet, options?: ImportOptions): RowDocument[]`**
-  - Extract rows as documents from a worksheet
-  - Supports header detection, custom headers, and data filtering
-  - Returns: Array of row objects with column values
-
-- **`cellFromSheetJS(sjsCell: XLSX.CellObject, sheet: string, col: string, row: number, options?: ImportOptions): ImportedCell`**
-  - Convert a SheetJS cell to excel.do Cell type
-  - Handles type inference, formatting, and metadata extraction
-
-### Export Module (`excel.do/export`)
-
-#### Functions
-
-- **`toWorkbook(workbookData: WorkbookData, options?: ExportOptions): XLSX.WorkBook`**
-  - Convert workbook data to a SheetJS WorkBook
-  - Returns: SheetJS WorkBook with sheets and metadata
-
-- **`toSheet(sheetData: SheetData, options?: ExportOptions): XLSX.WorkSheet`**
-  - Convert sheet data to a SheetJS WorkSheet
-  - Includes cell data, column widths, row heights, and merges
-
-- **`toXLSX(workbookData: WorkbookData, options?: ExportOptions): Promise<Buffer>`**
-  - Generate an XLSX buffer from workbook data
-  - Async function that returns Buffer ready for file writing
-
-- **`toCSV(sheetData: SheetData, options?: ExportOptions): string`**
-  - Generate a CSV string from sheet data
-  - Supports custom delimiters, headers, and formatting
-
-- **`cellToSheetJS(cell: Cell, options?: ExportOptions): XLSX.CellObject`**
-  - Convert an excel.do Cell to a SheetJS CellObject
-  - Handles formatting, formulas, and metadata preservation
-
-### Formula Module (`excel.do/formula`)
-
-#### Functions
-
-- **`parseFormula(formula: string, options?: ParserOptions): ParseResult`**
-  - Parse an Excel formula into an AST
-  - Returns: `{ ast, errors: ParseError[], formula }`
-
-- **`tokenize(formula: string): Token[]`**
-  - Tokenize a formula string into individual tokens
-
-#### Types
+### Forecasting
 
 ```typescript
-type TokenType =
-  | 'NUMBER' | 'STRING' | 'BOOLEAN' | 'ERROR'
-  | 'CELL_REF' | 'RANGE' | 'NAMED_RANGE'
-  | 'OPERATOR_ADD' | 'OPERATOR_SUB' | 'OPERATOR_MUL' | 'OPERATOR_DIV'
-  | 'OPERATOR_POW' | 'OPERATOR_CONCAT' | 'OPERATOR_EQ' | 'OPERATOR_NE'
-  | 'OPERATOR_LT' | 'OPERATOR_GT' | 'OPERATOR_LTE' | 'OPERATOR_GTE'
-  | 'LPAREN' | 'RPAREN' | 'COMMA' | 'COLON' | 'SEMICOLON'
-  | 'FUNCTION' | 'WHITESPACE' | 'EOF'
+// Built-in ML
+await excel`forecast next 6 months`
+await excel`predict Q4 based on historical trends`
+await excel`what-if: 10% price increase`
+```
 
-interface Token {
-  type: TokenType
-  value: string
-  start: number
-  end: number
-}
+## Architecture
 
-type ASTNodeType =
-  | 'Program' | 'BinaryExpression' | 'UnaryExpression'
-  | 'FunctionCall' | 'CellReference' | 'RangeReference'
-  | 'Literal' | 'ArrayLiteral' | 'ErrorValue'
+### Edge-Native Design
 
-interface ParseResult {
-  ast: ProgramNode
-  errors: ParseError[]
-  formula: string
-}
+```
+Client Request --> Cloudflare Edge --> Durable Object --> SQLite
+                        |                    |              |
+                   Global CDN           Per-Workbook     Hot Data
+                                        Isolation        (<10ms)
+                                             |
+                                            R2
+                                             |
+                                        Cold Storage
+                                        (< 100ms)
+```
 
-interface ParseError {
-  message: string
-  position: number
-  length: number
-  code: ParseErrorCode
-}
+### Durable Object per Workbook
+
+```
+WorkbookDO (metadata, users, sharing)
+  |
+  +-- SheetsDO (cells, formulas, formatting)
+  |     |-- SQLite: Cell data (encrypted)
+  |     +-- R2: Large attachments, images
+  |
+  +-- CollabDO (real-time cursors, selections)
+  |     +-- WebSocket connections
+  |
+  +-- HistoryDO (version control via gitx.do)
+        +-- SQLite: Commits, branches
+```
+
+### Storage Tiers
+
+| Tier | Storage | Use Case | Query Speed |
+|------|---------|----------|-------------|
+| **Hot** | SQLite | Active cells, recent edits | <10ms |
+| **Warm** | R2 + Index | Historical versions, large files | <100ms |
+| **Cold** | R2 Archive | Old versions, compliance | <1s |
+
+## vs Traditional Spreadsheets
+
+| Feature | Excel/Sheets | excel.do |
+|---------|--------------|----------|
+| **Interface** | Click menus | Natural language |
+| **Formulas** | Memorize syntax | Describe intent |
+| **Collaboration** | Merge conflicts | Git-native |
+| **API Access** | Add-ons required | API-first |
+| **Deployment** | Cloud lock-in | Your infrastructure |
+| **AI** | Copilot add-on | Built-in from day one |
+| **Version Control** | Manual saves | Automatic history |
+| **Cost** | Per-user fees | Run your own |
+
+## Use Cases
+
+### Financial Reporting
+
+```typescript
+await excel`load GL_export.csv`
+  .map(data => excel`map to chart of accounts`)
+  .map(mapped => excel`generate trial balance`)
+  .map(tb => excel`create P&L and Balance Sheet`)
+  .map(statements => excel`format for board presentation`)
+```
+
+### Data Cleaning
+
+```typescript
+await excel`customer_list.xlsx`
+  .map(data => excel`deduplicate by email`)
+  .map(clean => excel`standardize addresses`)
+  .map(std => excel`validate phone numbers`)
+  .map(valid => excel`flag incomplete records`)
+```
+
+### Sales Analytics
+
+```typescript
+await excel`CRM export this quarter`
+  .map(deals => excel`win rate by rep`)
+  .map(rates => excel`pipeline velocity`)
+  .map(velocity => excel`forecast accuracy`)
+  .map(analysis => excel`sales dashboard`)
+```
+
+### Inventory Management
+
+```typescript
+await excel`warehouse_data.xlsx`
+  .map(inv => excel`ABC analysis`)
+  .map(abc => excel`reorder point calculations`)
+  .map(reorder => excel`weeks of supply by SKU`)
+  .map(wos => excel`stockout risk report`)
 ```
 
 ## Module Exports
 
-excel.do provides multiple entry points for different use cases:
-
 ```typescript
-// Main module - all exports
-import * as excel from 'excel.do'
-
-// Cell module
-import { createCell, parseA1, expandRange } from 'excel.do/cell'
-
-// Import module
-import { parseWorkbook, parseSheet, rowsFromSheet, cellFromSheetJS } from 'excel.do/import'
-
-// Export module
-import { toXLSX, toCSV, toWorkbook, toSheet, cellToSheetJS } from 'excel.do/export'
-
-// Formula module
-import { parseFormula, tokenize } from 'excel.do/formula'
+import { excel } from 'excel.do'              // Full SDK
+import { excel } from 'excel.do/tiny'         // Minimal client (< 5KB)
+import { excel } from 'excel.do/formulas'     // Formula-only operations
+import { excel } from 'excel.do/import'       // XLSX/CSV import
+import { excel } from 'excel.do/export'       // XLSX/CSV/PDF export
 ```
 
-## Storage and Persistence
+## Deployment Options
 
-excel.do supports multiple storage backends:
-
-- **mongo.do**: Full MongoDB integration for persistent cell storage
-- **Custom Database**: Implement the `StorageBackend` interface
-- **WebSocket**: Real-time collaboration support via gitx.do
-
-## Testing
-
-Run the test suite:
+### Cloudflare Workers (Recommended)
 
 ```bash
-npm test              # Watch mode
-npm run test:run      # Single run
-npm run test:coverage # With coverage report
+npx create-dotdo excel
+# Deploys in under 60 seconds
 ```
 
-## Development
+### Private Cloud
 
 ```bash
-npm run dev       # Start Wrangler dev server
-npm run build     # Build with tsup
-npm run typecheck # Type check with tsc
-npm run lint      # Lint with ESLint
-npm run deploy    # Deploy to Cloudflare Workers
+docker run -p 8787:8787 dotdo/excel
 ```
 
-## TypeScript Support
+### On-Premises
 
-excel.do is written in TypeScript with full type definitions. All types are exported from the main module:
-
-```typescript
-import type {
-  Cell,
-  CellValue,
-  CellFormat,
-  CellReference,
-  RangeReference,
-} from 'excel.do'
+```bash
+./excel-do-install.sh --enterprise --sso
 ```
 
-## Error Handling
+## Roadmap
 
-Cell validation and formula parsing provide detailed error information:
+### Core Engine
+- [x] Cell data model with formatting
+- [x] Formula parsing and evaluation
+- [x] XLSX import/export
+- [x] CSV import/export
+- [x] A1 and R1C1 notation
+- [x] Range operations
+- [ ] Named ranges
+- [ ] Conditional formatting engine
+- [ ] Pivot table generation
 
-```typescript
-import { validateCell } from 'excel.do/cell'
-import { parseFormula } from 'excel.do/formula'
+### AI Features
+- [x] Natural language queries
+- [x] Smart suggestions
+- [x] Data transformations
+- [ ] Anomaly detection
+- [ ] Forecasting with ML
+- [ ] Chart recommendations
 
-// Cell validation
-const validation = validateCell(cell)
-if (!validation.valid) {
-  console.error('Validation errors:', validation.errors)
-}
+### Collaboration
+- [x] Real-time editing via gitx.do
+- [x] Version history
+- [ ] Comments and annotations
+- [ ] Conflict resolution UI
+- [ ] Sharing permissions
 
-// Formula parsing
-const result = parseFormula('=INVALID(')
-if (result.errors.length > 0) {
-  result.errors.forEach(err => {
-    console.error(`Error at position ${err.position}: ${err.message}`)
-  })
-}
+### Integrations
+- [x] mongo.do storage backend
+- [x] gitx.do version control
+- [ ] Google Sheets sync
+- [ ] Airtable import
+- [ ] API connectors (CRM, ERP)
+
+## Contributing
+
+excel.do is open source under the MIT license.
+
+```bash
+git clone https://github.com/dotdo/excel.do
+cd excel.do
+pnpm install
+pnpm test
 ```
-
-## Browser Support
-
-excel.do runs on:
-
-- Cloudflare Workers (ES2022+)
-- Node.js 18+
-- Modern browsers with ES2022 support
 
 ## License
 
-MIT
+MIT License - Spreadsheets for everyone.
 
-## Author
+---
 
-Nathan Clevenger
-
-## Repository
-
-https://github.com/nathanclevenger/excel.do
-
-## Keywords
-
-spreadsheet, excel, xlsx, cloudflare, workers, edge, mongodb, git, version-control, collaboration
+<p align="center">
+  <strong>Stop clicking. Start describing.</strong>
+  <br />
+  Edge-native. AI-first. Natural language.
+  <br /><br />
+  <a href="https://excel.do">Website</a> |
+  <a href="https://docs.excel.do">Docs</a> |
+  <a href="https://discord.gg/dotdo">Discord</a> |
+  <a href="https://github.com/dotdo/excel.do">GitHub</a>
+</p>
